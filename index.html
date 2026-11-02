@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>To-Do</title>
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="To-Do">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,7 +23,14 @@
       <span class="brand-mark"></span>
       <span>todo</span>
     </div>
-    <span id="today" class="nav-date"></span>
+    <div class="nav-right">
+      <span id="today" class="nav-date"></span>
+      <span id="sync-status" class="sync-status"></span>
+      <button id="sync-btn" class="sync-btn" type="button">Sync</button>
+      <button id="settings-btn" class="icon-btn settings-btn" type="button" title="Sync settings" aria-label="Sync settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
   </header>
 
   <main class="app">
@@ -46,6 +61,33 @@
 
     <div id="groups"></div>
   </main>
+
+  <dialog id="settings">
+    <form id="settings-form">
+      <h2>Sync Settings</h2>
+      <p class="hint">Your tasks are saved to a file in your private GitHub repository.</p>
+
+      <label>
+        Data repository
+        <input id="set-repo" type="text" placeholder="yourname/todolist-data" autocomplete="off" required>
+      </label>
+      <label>
+        File name
+        <input id="set-path" type="text" autocomplete="off" required>
+      </label>
+      <label>
+        Access key
+        <input id="set-token" type="password" autocomplete="off">
+      </label>
+      <p class="hint">The key is stored only in this browser, on this device.</p>
+
+      <div class="dialog-actions">
+        <button id="set-forget" type="button" class="link-btn">Forget key</button>
+        <button id="set-cancel" type="button" class="secondary">Cancel</button>
+        <button type="submit" class="primary">Save &amp; Sync</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

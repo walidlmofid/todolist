@@ -31,7 +31,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 24px 10px;
   background: rgba(10, 10, 10, 0.85);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-soft);
@@ -53,10 +53,62 @@ body {
   border: 6px solid var(--accent);
 }
 
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .nav-date {
   color: var(--muted);
   font-size: 14px;
   font-weight: 500;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
+}
+
+.sync-status {
+  color: var(--faint);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sync-btn {
+  position: relative;
+  padding: 7px 16px;
+  font-size: 14px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0a0a0a;
+}
+
+.sync-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.sync-btn:disabled { opacity: 0.6; cursor: wait; }
+
+/* Dot = changes on this device that haven't been synced yet. */
+.sync-btn.pending::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff9f1a;
+  border: 2px solid var(--bg);
+}
+
+.settings-btn {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .nav { padding-left: 16px; padding-right: 16px; }
+  .nav-date { display: none; }
 }
 
 .app {
@@ -328,3 +380,62 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
   background: var(--bg);
   max-width: 120px;
 }
+
+/* Settings dialog */
+dialog {
+  width: min(440px, calc(100% - 32px));
+  padding: 24px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(2px);
+}
+
+dialog h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.dialog-actions .secondary,
+.dialog-actions .primary { min-width: 0; }
+
+.link-btn {
+  margin-right: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.link-btn:hover { color: var(--danger); }
