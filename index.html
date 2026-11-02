@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>To-Do</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span>todo</span>
+    </div>
+    <span id="today" class="nav-date"></span>
+  </header>
+
+  <main class="app">
+    <section class="hero">
+      <h1>All Your Tasks<br>In One Place</h1>
+      <p>Simple groups, quick check-offs, no clutter.</p>
+    </section>
+
+    <section class="composer">
+      <form id="task-form" class="bar">
+        <input id="task-input" type="text" placeholder="New task…" autocomplete="off" required>
+        <select id="task-group" title="Group"></select>
+        <button type="submit" class="primary">Add Task</button>
+      </form>
+
+      <form id="group-form" class="bar">
+        <input id="group-input" type="text" placeholder="New group name…" autocomplete="off" required>
+        <button type="submit" class="secondary">Add Group</button>
+      </form>
+    </section>
+
+    <section class="stats">
+      <div class="stat"><span id="stat-total" class="stat-value">0</span><span class="stat-label">Tasks</span></div>
+      <div class="stat"><span id="stat-done" class="stat-value">0</span><span class="stat-label">Completed</span></div>
+      <div class="stat"><span id="stat-today" class="stat-value">0</span><span class="stat-label">Done Today</span></div>
+      <div class="stat"><span id="stat-groups" class="stat-value">0</span><span class="stat-label">Groups</span></div>
+    </section>
+
+    <div id="groups"></div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
