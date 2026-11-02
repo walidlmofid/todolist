@@ -89,6 +89,28 @@
     </form>
   </dialog>
 
+  <dialog id="review">
+    <form id="review-form">
+      <h2>Review Sync</h2>
+      <p class="hint">Nothing on this device changes until you press Apply.</p>
+
+      <div id="review-incoming">
+        <h3>From your other device</h3>
+        <ul id="review-list" class="review-list"></ul>
+      </div>
+
+      <div id="review-conflicts">
+        <h3>Changed on both devices: choose what to keep</h3>
+        <div id="conflict-list"></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button id="review-cancel" type="button" class="secondary">Cancel</button>
+        <button type="submit" class="primary">Apply &amp; Sync</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="app.js"></script>
 </body>
 </html>

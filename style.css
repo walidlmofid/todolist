@@ -419,6 +419,7 @@ dialog label {
 }
 
 .dialog-actions {
+  justify-content: flex-end;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -439,3 +440,74 @@ dialog label {
 }
 
 .link-btn:hover { color: var(--danger); }
+
+/* Sync review dialog */
+#review { width: min(520px, calc(100% - 32px)); }
+
+#review form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 96px);
+}
+
+#review-incoming, #review-conflicts { min-height: 0; overflow-y: auto; }
+
+dialog h3 {
+  margin: 20px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+}
+
+.review-list li {
+  padding: 9px 12px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.review-list li:last-child { border-bottom: none; }
+
+.conflict {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #4a3a12;
+  border-radius: 6px;
+  background: rgba(255, 159, 26, 0.05);
+}
+
+.conflict legend {
+  padding: 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.conflict label {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+  padding: 5px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.conflict input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
