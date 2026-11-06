@@ -275,6 +275,12 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
 
 .group-tools .priority { margin-right: 6px; }
 
+.arrow-btn {
+  display: grid;
+  place-items: center;
+  padding: 5px 6px;
+}
+
 .group-name {
   font-weight: 700;
   font-size: 17px;
@@ -428,7 +434,10 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
   .group-header { flex-wrap: wrap; row-gap: 10px; }
   .group-tools { flex-basis: 100%; }
   .group-tools .priority { margin-right: auto; }
-  .group-tools .icon-btn { font-size: 17px; padding: 6px 11px; }
+  .group-tools { flex-wrap: wrap; }
+  .group-tools .icon-btn { font-size: 17px; padding: 7px 9px; }
+  .group-tools .arrow-btn { padding: 7px; }
+  .group-tools .arrow-btn svg { width: 18px; height: 18px; }
 }
 
 /* Settings dialog */
@@ -560,4 +569,10 @@ dialog h3 {
   padding: 0;
   flex-shrink: 0;
   accent-color: var(--accent);
+}
+
+/* Very small phones: tighter group buttons so they stay on one line. */
+@media (max-width: 380px) {
+  .group-header { padding-left: 14px; padding-right: 14px; }
+  .group-tools .icon-btn, .group-tools .arrow-btn { padding: 7px 5px; }
 }

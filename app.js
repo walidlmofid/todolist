@@ -564,6 +564,20 @@ function prioritySelect(item) {
   return select;
 }
 
+const ARROWS = {
+  top: "M6 4h12M12 20V9M7 13l5-5 5 5",
+  up: "M12 19V5M7 10l5-5 5 5",
+  down: "M12 5v14M7 14l5 5 5-5",
+  bottom: "M6 20h12M12 4v11M7 11l5 5 5-5",
+};
+
+function arrowButton(name, title, disabled, onclick) {
+  const button = el("button", { className: "icon-btn arrow-btn", title, disabled, onclick });
+  button.setAttribute("aria-label", title);
+  button.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="${ARROWS[name]}"/></svg>`;
+  return button;
+}
+
 const isGroupDrag = e => e.dataTransfer.types.includes(GROUP_DRAG);
 
 function render() {
@@ -614,10 +628,14 @@ function renderGroup(group, index) {
   const tasks = state.tasks.filter(t => t.groupId === group.id);
   const doneCount = tasks.filter(t => t.doneAt).length;
 
+  const first = index === 0;
+  const last = index === state.groups.length - 1;
   const tools = el("div", { className: "group-tools" }, [
     prioritySelect(group),
-    el("button", { className: "icon-btn", title: "Move group up", textContent: "↑", disabled: index === 0, onclick: () => shiftGroup(group.id, -1) }),
-    el("button", { className: "icon-btn", title: "Move group down", textContent: "↓", disabled: index === state.groups.length - 1, onclick: () => shiftGroup(group.id, 1) }),
+    arrowButton("top", "Move group to the top", first, () => placeGroup(group.id, 0)),
+    arrowButton("up", "Move group up", first, () => shiftGroup(group.id, -1)),
+    arrowButton("down", "Move group down", last, () => shiftGroup(group.id, 1)),
+    arrowButton("bottom", "Move group to the bottom", last, () => placeGroup(group.id, state.groups.length - 1)),
   ]);
 
   if (group.id !== DEFAULT_GROUP_ID) {
