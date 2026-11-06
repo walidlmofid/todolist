@@ -10,6 +10,9 @@
   --accent: #d4ff1a;
   --accent-hover: #c2ec00;
   --danger: #ff5c5c;
+  --p1: #5cb8ff;
+  --p2: #ffb020;
+  --p3: #ff5c5c;
   color-scheme: dark;
 }
 
@@ -224,15 +227,13 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
 
 @media (max-width: 560px) {
   .stats { grid-template-columns: repeat(2, 1fr); row-gap: 28px; }
-  #task-form button.primary { flex: 1 1 100%; }
+  #task-form button.primary { flex: 1 1 auto; }
 }
 
 /* Groups */
 #groups {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
-  gap: 20px;
-  align-items: start;
+  columns: 440px 2;
+  column-gap: 20px;
 }
 
 .group {
@@ -240,11 +241,21 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
   border: 1px solid var(--border-soft);
   border-radius: 6px;
   overflow: hidden;
+  margin-bottom: 20px;
+  break-inside: avoid;
   transition: border-color 0.15s;
 }
 
 .group:hover { border-color: var(--border); }
 .group.drop-target { border-color: var(--accent); }
+.group.dragging { opacity: 0.4; }
+.group.drop-above { box-shadow: 0 -3px 0 var(--accent); }
+.group.drop-below { box-shadow: 0 3px 0 var(--accent); }
+
+/* Groups with a priority get a colored edge. */
+.group.gp1 { border-left: 3px solid var(--p1); }
+.group.gp2 { border-left: 3px solid var(--p2); }
+.group.gp3 { border-left: 3px solid var(--p3); }
 
 .group-header {
   display: flex;
@@ -253,13 +264,24 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
   padding: 16px 18px;
   background: var(--card-head);
   border-bottom: 1px solid var(--border-soft);
+  cursor: grab;
 }
+
+.group-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.group-tools .priority { margin-right: 6px; }
 
 .group-name {
   font-weight: 700;
   font-size: 17px;
   letter-spacing: -0.01em;
   flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .group-count {
@@ -282,6 +304,7 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
 }
 
 .icon-btn:hover { background: #1c1c1c; color: var(--text); }
+.icon-btn:disabled { opacity: 0.25; cursor: default; background: transparent; color: var(--faint); }
 .icon-btn.danger:hover { background: rgba(255, 92, 92, 0.12); color: var(--danger); }
 
 .tasks {
@@ -373,12 +396,39 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
 
 .task.done .task-dates { color: #4f4f4f; }
 
-.task select {
+.task-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.task select,
+.group-header select {
   font-size: 12px;
   padding: 4px 8px;
   color: var(--muted);
   background: var(--bg);
   max-width: 120px;
+  cursor: pointer;
+}
+
+.priority.p0 { color: var(--faint); }
+.priority.p1 { color: var(--p1); border-color: rgba(92, 184, 255, 0.45); }
+.priority.p2 { color: var(--p2); border-color: rgba(255, 176, 32, 0.45); }
+.priority.p3 { color: var(--p3); border-color: rgba(255, 92, 92, 0.5); }
+.priority option { color: var(--text); background: var(--card); }
+.task.done .priority { opacity: 0.5; }
+
+/* Phones: the controls move to their own line under the task / group name. */
+@media (max-width: 560px) {
+  .task { flex-wrap: wrap; row-gap: 10px; }
+  .task-controls { flex-basis: 100%; padding-left: 34px; }
+  .task-controls .icon-btn { margin-left: auto; }
+  .group-header { flex-wrap: wrap; row-gap: 10px; }
+  .group-tools { flex-basis: 100%; }
+  .group-tools .priority { margin-right: auto; }
+  .group-tools .icon-btn { font-size: 17px; padding: 6px 11px; }
 }
 
 /* Settings dialog */

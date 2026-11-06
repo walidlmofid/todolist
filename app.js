@@ -3,6 +3,13 @@ const SYNC_KEY = "todo-sync-v1";
 const BASE_KEY = "todo-base-v1";
 const DEFAULT_GROUP_ID = "ungrouped";
 const EPOCH = new Date(0).toISOString();
+const GROUP_DRAG = "application/x-todo-group";
+
+// Bump when the saved data changes shape. A device running an older version
+// of the app refuses to sync newer data instead of damaging it.
+const DATA_VERSION = 3;
+
+const PRIORITIES = ["No priority", "Low", "Medium", "High"];
 
 // ---------- State ----------
 
@@ -12,7 +19,7 @@ let editCount = 0;
 
 function freshState() {
   return {
-    groups: [{ id: DEFAULT_GROUP_ID, name: "Ungrouped", createdAt: EPOCH }],
+    groups: [{ id: DEFAULT_GROUP_ID, name: "Ungrouped", createdAt: EPOCH, pos: 0, priority: 0 }],
     tasks: [],
   };
 }
@@ -25,28 +32,32 @@ function load() {
   return freshState();
 }
 
-// Brings data saved by older versions up to date.
+// Brings data saved by older versions up to date. Defaults must only depend
+// on the item itself, so every device upgrades the same data the same way.
 function upgrade(data) {
   delete data.app;
   delete data.version;
   delete data.deleted;
   data.groups.forEach((g, i) => {
     g.createdAt = g.createdAt || (g.id === DEFAULT_GROUP_ID ? EPOCH : new Date(i + 1).toISOString());
+    if (typeof g.pos !== "number") g.pos = Date.parse(g.createdAt);
+    g.priority = g.priority || 0;
     delete g.updatedAt;
   });
   data.tasks.forEach((t, i) => {
     if (typeof t.pos !== "number") t.pos = i;
+    t.priority = t.priority || 0;
     delete t.updatedAt;
   });
   if (!data.groups.some(g => g.id === DEFAULT_GROUP_ID)) data.groups.unshift(freshState().groups[0]);
   return sortState(data);
 }
 
-// Groups: "Ungrouped" first, then oldest to newest. Tasks: by position.
+// Groups and tasks are both kept in their chosen order.
 function sortState(data) {
-  data.groups.sort((a, b) =>
-    (b.id === DEFAULT_GROUP_ID) - (a.id === DEFAULT_GROUP_ID) || a.createdAt.localeCompare(b.createdAt));
-  data.tasks.sort((a, b) => a.pos - b.pos || a.createdAt.localeCompare(b.createdAt));
+  const byPos = (a, b) => a.pos - b.pos || a.createdAt.localeCompare(b.createdAt);
+  data.groups.sort(byPos);
+  data.tasks.sort(byPos);
   return data;
 }
 
@@ -62,8 +73,16 @@ function now() {
   return new Date().toISOString();
 }
 
-function nextPos() {
-  return state.tasks.reduce((max, t) => Math.max(max, t.pos), 0) + 1;
+function nextPos(list) {
+  return list.reduce((max, x) => Math.max(max, x.pos), 0) + 1;
+}
+
+// A position that sorts between two neighbours (either may be missing).
+function between(before, after) {
+  if (before && after) return (before.pos + after.pos) / 2;
+  if (before) return before.pos + 1;
+  if (after) return after.pos - 1;
+  return 0;
 }
 
 function formatDate(iso) {
@@ -75,14 +94,15 @@ function formatDate(iso) {
 
 // ---------- Actions ----------
 
-function addTask(text, groupId) {
+function addTask(text, groupId, priority) {
   state.tasks.push({
     id: uid(),
     text,
     groupId,
-    pos: nextPos(),
+    pos: nextPos(state.tasks),
     createdAt: now(),
     doneAt: null,
+    priority,
   });
   commit();
 }
@@ -103,22 +123,35 @@ function moveTask(id, groupId, beforeId = null) {
   const task = state.tasks.find(t => t.id === id);
   const others = state.tasks.filter(t => t.groupId === groupId && t.id !== id);
   const beforeIndex = others.findIndex(t => t.id === beforeId);
-  if (beforeIndex === -1) {
-    task.pos = nextPos();
-  } else {
-    const before = others[beforeIndex];
-    const prev = others[beforeIndex - 1];
-    task.pos = prev ? (prev.pos + before.pos) / 2 : before.pos - 1;
-  }
+  task.pos = beforeIndex === -1 ? nextPos(state.tasks) : between(others[beforeIndex - 1], others[beforeIndex]);
   task.groupId = groupId;
   commit();
 }
 
+// Works for both tasks and groups.
+function setPriority(item, priority) {
+  item.priority = priority;
+  commit();
+}
+
 function addGroup(name) {
-  const group = { id: uid(), name, createdAt: now() };
+  const group = { id: uid(), name, createdAt: now(), pos: nextPos(state.groups), priority: 0 };
   state.groups.push(group);
   commit();
   return group;
+}
+
+// Puts a group at a place in the list of the other groups (0 = top).
+function placeGroup(id, index) {
+  const group = state.groups.find(g => g.id === id);
+  const others = state.groups.filter(g => g.id !== id);
+  if (index < 0 || index > others.length) return;
+  group.pos = between(others[index - 1], others[index]);
+  commit();
+}
+
+function shiftGroup(id, step) {
+  placeGroup(id, state.groups.findIndex(g => g.id === id) + step);
 }
 
 function renameGroup(id) {
@@ -181,19 +214,30 @@ function saveBase(data) {
 }
 
 const clone = x => JSON.parse(JSON.stringify(x));
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const priorityName = p => `${PRIORITIES[p] || "No priority"}${p ? " priority" : ""}`;
 
-// What can change on a task or group, and how to describe it.
+// What can change on a task or group, and how to describe it. Each part
+// lists the fields it covers; `key` (optional) decides what counts as a change.
 const KINDS = {
   groups: {
     label: g => `group "${g.name}"`,
     added: g => `New group "${g.name}"`,
     parts: [
       {
-        key: g => g.name,
-        copy: (from, to) => { to.name = from.name; },
+        fields: ["name"],
         describe: (before, after) => `Renamed group "${before.name}" to "${after.name}"`,
         show: g => `named "${g.name}"`,
+      },
+      {
+        fields: ["pos"],
+        describe: (before, after) => `Moved group "${after.name}"`,
+        // Both devices reordering groups isn't worth asking about.
+        minor: () => true,
+      },
+      {
+        fields: ["priority"],
+        describe: (before, after) => `Set group "${after.name}" to ${priorityName(after.priority)}`,
+        show: g => priorityName(g.priority),
       },
     ],
   },
@@ -202,14 +246,12 @@ const KINDS = {
     added: (t, groupName) => `New task "${t.text}" in ${groupName(t.groupId)}`,
     parts: [
       {
-        key: t => t.text,
-        copy: (from, to) => { to.text = from.text; },
+        fields: ["text"],
         describe: (before, after) => `Renamed "${before.text}" to "${after.text}"`,
         show: t => `"${t.text}"`,
       },
       {
-        key: t => [t.groupId, t.pos],
-        copy: (from, to) => { to.groupId = from.groupId; to.pos = from.pos; },
+        fields: ["groupId", "pos"],
         describe: (before, after, groupName) => before.groupId === after.groupId
           ? `Reordered "${after.text}"`
           : `Moved "${after.text}" to ${groupName(after.groupId)}`,
@@ -218,14 +260,41 @@ const KINDS = {
         minor: (a, b) => a.groupId === b.groupId,
       },
       {
+        fields: ["doneAt"],
         key: t => !!t.doneAt,
-        copy: (from, to) => { to.doneAt = from.doneAt; },
         describe: (before, after) => `${after.doneAt ? "Checked" : "Unchecked"} "${after.text}"`,
         show: t => (t.doneAt ? "checked" : "not checked"),
+      },
+      {
+        fields: ["priority"],
+        describe: (before, after) => after.priority
+          ? `Set "${after.text}" to ${priorityName(after.priority)}`
+          : `Removed priority from "${after.text}"`,
+        show: t => priorityName(t.priority),
       },
     ],
   },
 };
+
+// Known parts, plus one quiet part per field this version doesn't know about
+// (added by a newer version), so those fields are merged instead of lost.
+function partsFor(kind, ...items) {
+  const known = KINDS[kind].parts;
+  const knownFields = new Set(["id", "createdAt", ...known.flatMap(p => p.fields)]);
+  const extra = [...new Set(items.filter(Boolean).flatMap(Object.keys))]
+    .filter(f => !knownFields.has(f))
+    .map(f => ({ fields: [f], quiet: true }));
+  return [...known, ...extra];
+}
+
+const partKey = (part, x) => JSON.stringify(part.key ? part.key(x) : part.fields.map(f => x[f] ?? null));
+
+function copyPart(part, from, to) {
+  part.fields.forEach(f => {
+    if (f in from) to[f] = clone(from[f]);
+    else delete to[f];
+  });
+}
 
 // Works out what a sync would do. Returns the changes coming to this device,
 // the conflicts to decide on, and finish() to build the final data once decided.
@@ -236,7 +305,7 @@ function planSync(base, local, remote) {
   const groupName = id =>
     (remote.groups.find(g => g.id === id) || local.groups.find(g => g.id === id) || { name: "Ungrouped" }).name;
 
-  for (const [kind, { label, added, parts }] of Object.entries(KINDS)) {
+  for (const [kind, { label, added }] of Object.entries(KINDS)) {
     const index = list => new Map((list || []).map(x => [x.id, x]));
     const baseItems = index(base && base[kind]);
     const localItems = index(local[kind]);
@@ -248,24 +317,25 @@ function planSync(base, local, remote) {
       const b = baseItems.get(id);
       const l = localItems.get(id);
       const r = remoteItems.get(id);
-      const changedSinceBase = x => !b || parts.some(p => !same(p.key(x), p.key(b)));
+      const parts = partsFor(kind, b, l, r);
+      const changedSinceBase = x => !b || parts.some(p => partKey(p, x) !== partKey(p, b));
 
       if (l && r) {
         const item = clone(l);
         out.set(id, item);
         for (const part of parts) {
-          if (same(part.key(l), part.key(r))) continue;
-          const localChanged = !b || !same(part.key(l), part.key(b));
-          const remoteChanged = !b || !same(part.key(r), part.key(b));
+          if (partKey(part, l) === partKey(part, r)) continue;
+          const localChanged = !b || partKey(part, l) !== partKey(part, b);
+          const remoteChanged = !b || partKey(part, r) !== partKey(part, b);
           if (!localChanged) {
-            part.copy(r, item);
-            incoming.push(part.describe(l, r, groupName));
-          } else if (remoteChanged && !(part.minor && part.minor(l, r))) {
+            copyPart(part, r, item);
+            if (!part.quiet) incoming.push(part.describe(l, r, groupName));
+          } else if (remoteChanged && !part.quiet && !(part.minor && part.minor(l, r))) {
             conflicts.push({
               title: label(l),
               mine: `This device: ${part.show(l, groupName)}`,
               theirs: `Other device: ${part.show(r, groupName)}`,
-              useTheirs: () => part.copy(r, item),
+              useTheirs: () => copyPart(part, r, item),
             });
           }
         }
@@ -363,7 +433,11 @@ async function syncOnce() {
   if (res.ok) {
     const file = await res.json();
     sha = file.sha;
-    remote = upgrade(JSON.parse(fromBase64(file.content)));
+    const raw = JSON.parse(fromBase64(file.content));
+    if ((raw.version || 0) > DATA_VERSION) {
+      throw new Error("Your tasks were saved by a newer version of this app. Close the app completely and open it again to update it, then sync.");
+    }
+    remote = upgrade(raw);
   } else if (res.status !== 404) {
     throw apiError(res);
   }
@@ -386,7 +460,7 @@ async function syncOnce() {
   const device = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? "phone" : "computer";
   const put = await github("PUT", {
     message: `Sync from ${device}`,
-    content: toBase64(JSON.stringify({ app: "todo", version: 2, ...merged }, null, 2) + "\n"),
+    content: toBase64(JSON.stringify({ app: "todo", version: DATA_VERSION, ...merged }, null, 2) + "\n"),
     ...(sha && { sha }),
   });
   if (put.status === 409 || put.status === 422) return "retry";
@@ -466,6 +540,7 @@ function reviewSync(plan) {
 
 const groupsEl = document.getElementById("groups");
 const taskGroupSelect = document.getElementById("task-group");
+const taskPrioritySelect = document.getElementById("task-priority");
 
 function el(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
@@ -478,6 +553,18 @@ function groupOptions(selectedId) {
     el("option", { value: g.id, textContent: g.name, selected: g.id === selectedId })
   );
 }
+
+function priorityOptions(selected) {
+  return PRIORITIES.map((label, i) => el("option", { value: i, textContent: label, selected: i === selected }));
+}
+
+function prioritySelect(item) {
+  const select = el("select", { className: `priority p${item.priority}`, title: "Priority" }, priorityOptions(item.priority));
+  select.addEventListener("change", () => setPriority(item, Number(select.value)));
+  return select;
+}
+
+const isGroupDrag = e => e.dataTransfer.types.includes(GROUP_DRAG);
 
 function render() {
   const selected = taskGroupSelect.value || DEFAULT_GROUP_ID;
@@ -523,38 +610,68 @@ function renderSync() {
   }
 }
 
-function renderGroup(group) {
+function renderGroup(group, index) {
   const tasks = state.tasks.filter(t => t.groupId === group.id);
   const doneCount = tasks.filter(t => t.doneAt).length;
 
-  const header = el("div", { className: "group-header" }, [
-    el("span", { className: "group-name", textContent: group.name }),
-    el("span", { className: "group-count", textContent: `${doneCount}/${tasks.length}` }),
+  const tools = el("div", { className: "group-tools" }, [
+    prioritySelect(group),
+    el("button", { className: "icon-btn", title: "Move group up", textContent: "↑", disabled: index === 0, onclick: () => shiftGroup(group.id, -1) }),
+    el("button", { className: "icon-btn", title: "Move group down", textContent: "↓", disabled: index === state.groups.length - 1, onclick: () => shiftGroup(group.id, 1) }),
   ]);
 
   if (group.id !== DEFAULT_GROUP_ID) {
-    header.append(
+    tools.append(
       el("button", { className: "icon-btn", title: "Rename group", textContent: "✎", onclick: () => renameGroup(group.id) }),
       el("button", { className: "icon-btn danger", title: "Delete group", textContent: "✕", onclick: () => deleteGroup(group.id) }),
     );
   }
 
+  const header = el("div", { className: "group-header", draggable: true, title: "Drag to reorder groups" }, [
+    el("span", { className: "group-name", textContent: group.name }),
+    el("span", { className: "group-count", textContent: `${doneCount}/${tasks.length}` }),
+    tools,
+  ]);
+
   const list = el("ul", { className: "tasks" },
     tasks.length ? tasks.map(renderTask) : [el("li", { className: "empty", textContent: "No tasks — drag one here" })]
   );
 
-  const section = el("section", { className: "group" }, [header, list]);
+  const section = el("section", { className: `group gp${group.priority}` }, [header, list]);
 
-  // Dropping on the group (not on a specific task) puts the task at the end.
+  header.addEventListener("dragstart", e => {
+    e.dataTransfer.setData(GROUP_DRAG, group.id);
+    e.dataTransfer.effectAllowed = "move";
+    section.classList.add("dragging");
+  });
+  header.addEventListener("dragend", () => section.classList.remove("dragging"));
+
+  const clearMarks = () => section.classList.remove("drop-target", "drop-above", "drop-below");
+  const dropsBelow = e => {
+    const box = section.getBoundingClientRect();
+    return e.clientY > box.top + box.height / 2;
+  };
+
+  // A dragged group lands above or below this one; a dragged task lands at the end of it.
   section.addEventListener("dragover", e => {
     e.preventDefault();
-    section.classList.add("drop-target");
+    clearMarks();
+    if (!isGroupDrag(e)) section.classList.add("drop-target");
+    else section.classList.add(dropsBelow(e) ? "drop-below" : "drop-above");
   });
   section.addEventListener("dragleave", e => {
-    if (!section.contains(e.relatedTarget)) section.classList.remove("drop-target");
+    if (!section.contains(e.relatedTarget)) clearMarks();
   });
   section.addEventListener("drop", e => {
     e.preventDefault();
+    clearMarks();
+    if (isGroupDrag(e)) {
+      const id = e.dataTransfer.getData(GROUP_DRAG);
+      if (id === group.id) return;
+      const others = state.groups.filter(g => g.id !== id);
+      placeGroup(id, others.findIndex(g => g.id === group.id) + (dropsBelow(e) ? 1 : 0));
+      return;
+    }
     const id = e.dataTransfer.getData("text/plain");
     if (id) moveTask(id, group.id);
   });
@@ -575,23 +692,30 @@ function renderTask(task) {
       el("div", { className: "task-text", textContent: task.text }),
       el("div", { className: "task-dates", textContent: dates.join("  ·  ") }),
     ]),
-    groupSelect,
-    el("button", { className: "icon-btn danger", title: "Delete task", textContent: "✕", onclick: () => deleteTask(task.id) }),
+    el("div", { className: "task-controls" }, [
+      prioritySelect(task),
+      groupSelect,
+      el("button", { className: "icon-btn danger", title: "Delete task", textContent: "✕", onclick: () => deleteTask(task.id) }),
+    ]),
   ]);
 
   li.addEventListener("dragstart", e => {
+    e.stopPropagation();
     e.dataTransfer.setData("text/plain", task.id);
     li.classList.add("dragging");
   });
   li.addEventListener("dragend", () => li.classList.remove("dragging"));
 
-  // Dropping on a task puts the dragged task right before it.
+  // Dropping a task on a task puts it right before it. Group drags are left to the group.
   li.addEventListener("dragover", e => {
+    if (isGroupDrag(e)) return;
     e.preventDefault();
+    e.stopPropagation();
     li.classList.add("drop-before");
   });
   li.addEventListener("dragleave", () => li.classList.remove("drop-before"));
   li.addEventListener("drop", e => {
+    if (isGroupDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const id = e.dataTransfer.getData("text/plain");
@@ -653,13 +777,16 @@ document.getElementById("settings-btn").addEventListener("click", openSettings);
 
 // ---------- Forms ----------
 
+taskPrioritySelect.replaceChildren(...priorityOptions(0));
+
 document.getElementById("task-form").addEventListener("submit", e => {
   e.preventDefault();
   const input = document.getElementById("task-input");
   const text = input.value.trim();
   if (!text) return;
-  addTask(text, taskGroupSelect.value);
+  addTask(text, taskGroupSelect.value, Number(taskPrioritySelect.value));
   input.value = "";
+  taskPrioritySelect.value = "0";
   input.focus();
 });
 
