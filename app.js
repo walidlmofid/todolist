@@ -560,6 +560,7 @@ async function syncNow() {
       sync.lastSync = now();
       sync.pending = editCount !== editsBefore;
       sync.error = null;
+      hideNotice();
     }
   } catch (e) {
     sync.error = e.message;
@@ -570,6 +571,62 @@ async function syncNow() {
     renderSync();
   }
 }
+
+// ---------- Checking for changes from the other device ----------
+//
+// Only looks: downloads the file and counts what Sync would bring in.
+// Nothing on this device changes until you press Sync.
+
+const noticeEl = document.getElementById("notice");
+const noticeText = document.getElementById("notice-text");
+const noticeAction = document.getElementById("notice-action");
+let noticeKey = null;
+let dismissedKey = null;
+let lastCheck = 0;
+
+async function checkRemote(force = false) {
+  if (!sync.repo || !sync.token || syncing || !navigator.onLine) return;
+  if (!force && Date.now() - lastCheck < 30 * 1000) return;
+  lastCheck = Date.now();
+  try {
+    const res = await github("GET");
+    if (!res.ok || syncing) return;
+    const file = await res.json();
+    const raw = JSON.parse(fromBase64(file.content));
+    if ((raw.version || 0) > DATA_VERSION) {
+      showNotice(file.sha, "Your tasks were saved by a newer version of this app. Reload to update it.", "Reload", () => location.reload());
+      return;
+    }
+    const plan = planSync(loadBase(), clone(state), upgrade(raw));
+    const count = plan.incoming.length + plan.conflicts.length;
+    if (!count) return hideNotice();
+    showNotice(file.sha,
+      `${count} ${count === 1 ? "change" : "changes"} from your other device ${count === 1 ? "is" : "are"} waiting.`,
+      "Sync now", syncNow);
+  } catch (e) {
+    // Best effort: pressing Sync reports any real problem.
+  }
+}
+
+function showNotice(key, text, actionLabel, action) {
+  if (key === dismissedKey) return;
+  noticeKey = key;
+  noticeText.textContent = text;
+  noticeAction.textContent = actionLabel;
+  noticeAction.onclick = action;
+  noticeEl.hidden = false;
+}
+
+function hideNotice() {
+  noticeEl.hidden = true;
+  noticeKey = null;
+}
+
+// Hidden until something newer arrives, or the app is opened again.
+document.getElementById("notice-close").addEventListener("click", () => {
+  dismissedKey = noticeKey;
+  hideNotice();
+});
 
 // ---------- Sync review ----------
 
@@ -992,6 +1049,13 @@ if ("serviceWorker" in navigator && window.isSecureContext && /^https?:$/.test(l
 
 render();
 autoArchive();
-// Keep archiving while the app stays open, and when it comes back to the screen.
+checkRemote(true);
+// Keep archiving and checking for changes while the app stays open, and when it comes back to the screen.
 setInterval(autoArchive, 60 * 1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) autoArchive(); });
+setInterval(checkRemote, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  autoArchive();
+  checkRemote();
+});
+window.addEventListener("online", () => checkRemote(true));

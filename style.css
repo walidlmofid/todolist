@@ -713,3 +713,28 @@ button.small {
   .archived-task { flex-wrap: wrap; }
   .archived-actions { flex-basis: 100%; justify-content: flex-end; }
 }
+
+/* Bar under the top bar: changes from the other device are waiting. */
+.nav { flex-wrap: wrap; row-gap: 10px; }
+
+.notice {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid rgba(212, 255, 26, 0.35);
+  border-radius: 6px;
+  background: rgba(212, 255, 26, 0.08);
+  font-size: 14px;
+  font-weight: 500;
+  animation: notice-in 0.25s ease-out;
+}
+
+.notice[hidden] { display: none; }
+.notice-icon { color: var(--accent); flex-shrink: 0; }
+.notice-text { flex: 1; min-width: 0; }
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translateY(-6px); }
+}
