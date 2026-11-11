@@ -483,7 +483,9 @@ async function github(method, body) {
       body: body && JSON.stringify(body),
     });
   } catch (e) {
-    throw new Error("Couldn't reach GitHub. Check your internet connection.");
+    const error = new Error("Couldn't reach GitHub. Check your internet connection.");
+    error.offline = true;
+    throw error;
   }
 }
 
@@ -561,8 +563,10 @@ async function syncNow() {
       sync.pending = editCount !== editsBefore;
       sync.error = null;
       hideNotice();
+      setReach("ok");
     }
   } catch (e) {
+    if (e.offline) setReach("offline");
     sync.error = e.message;
     alert("Sync failed: " + e.message);
   } finally {
@@ -581,16 +585,43 @@ const noticeEl = document.getElementById("notice");
 const noticeText = document.getElementById("notice-text");
 const noticeAction = document.getElementById("notice-action");
 let noticeKey = null;
+let noticeKind = null;
 let dismissedKey = null;
 let lastCheck = 0;
 
+// Whether the last check reached GitHub: null (not checked yet), "ok",
+// "offline", or the error GitHub gave (e.g. a rejected key).
+let reach = null;
+
+function setReach(value) {
+  reach = value;
+  if (value === "ok") {
+    if (noticeKind === "warn") hideNotice();
+    // A hidden "offline" bar may show again the next time the connection drops.
+    if (dismissedKey === "offline" || String(dismissedKey).startsWith("error:")) dismissedKey = null;
+  } else if (value === "offline") {
+    showNotice("offline",
+      "Offline: can't check for changes from your other device. Your edits are saved here.",
+      "Try again", () => checkRemote(true), "warn");
+  } else if (value) {
+    showNotice("error:" + value, `Can't check for changes from your other device: ${value}`,
+      "Sync settings", openSettings, "warn");
+  }
+  renderSync();
+}
+
 async function checkRemote(force = false) {
-  if (!sync.repo || !sync.token || syncing || !navigator.onLine) return;
+  if (!sync.repo || !sync.token || syncing) return;
+  if (!navigator.onLine) return setReach("offline");
   if (!force && Date.now() - lastCheck < 30 * 1000) return;
   lastCheck = Date.now();
   try {
     const res = await github("GET");
-    if (!res.ok || syncing) return;
+    if (syncing) return;
+    // 404: no file yet, so there's nothing to bring in.
+    if (res.status === 404) return setReach("ok");
+    if (!res.ok) return setReach(apiError(res).message);
+    setReach("ok");
     const file = await res.json();
     const raw = JSON.parse(fromBase64(file.content));
     if ((raw.version || 0) > DATA_VERSION) {
@@ -604,22 +635,27 @@ async function checkRemote(force = false) {
       `${count} ${count === 1 ? "change" : "changes"} from your other device ${count === 1 ? "is" : "are"} waiting.`,
       "Sync now", syncNow);
   } catch (e) {
-    // Best effort: pressing Sync reports any real problem.
+    if (e.offline) setReach("offline");
+    // Anything else: pressing Sync reports it.
   }
 }
 
-function showNotice(key, text, actionLabel, action) {
+// kind "info" (changes waiting) or "warn" (couldn't check).
+function showNotice(key, text, actionLabel, action, kind = "info") {
   if (key === dismissedKey) return;
   noticeKey = key;
+  noticeKind = kind;
   noticeText.textContent = text;
   noticeAction.textContent = actionLabel;
   noticeAction.onclick = action;
+  noticeEl.classList.toggle("warn", kind === "warn");
   noticeEl.hidden = false;
 }
 
 function hideNotice() {
   noticeEl.hidden = true;
   noticeKey = null;
+  noticeKind = null;
 }
 
 // Hidden until something newer arrives, or the app is opened again.
@@ -769,8 +805,18 @@ function renderSync() {
   button.classList.toggle("pending", unsynced && !syncing);
   button.title = unsynced ? "You have changes that aren't synced yet" : "Sync with GitHub";
 
+  const lastSynced = sync.lastSync ? `Last synced ${formatDate(sync.lastSync)}.` : "Not synced yet.";
+  status.classList.toggle("warn", !syncing && !!reach && reach !== "ok");
+  status.title = "";
+
   if (syncing) {
     status.textContent = "Syncing…";
+  } else if (reach === "offline") {
+    status.textContent = "Offline";
+    status.title = `Can't reach GitHub to check for changes. ${lastSynced}`;
+  } else if (reach && reach !== "ok") {
+    status.textContent = "Can't check";
+    status.title = `${reach} ${lastSynced}`;
   } else if (sync.error) {
     status.textContent = "Sync failed";
   } else if (sync.lastSync) {
@@ -1059,3 +1105,4 @@ document.addEventListener("visibilitychange", () => {
   checkRemote();
 });
 window.addEventListener("online", () => checkRemote(true));
+window.addEventListener("offline", () => { if (sync.repo && sync.token) setReach("offline"); });

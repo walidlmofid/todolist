@@ -738,3 +738,38 @@ button.small {
 @keyframes notice-in {
   from { opacity: 0; transform: translateY(-6px); }
 }
+
+/* Couldn't reach GitHub */
+.notice.warn {
+  border-color: rgba(255, 176, 32, 0.4);
+  background: rgba(255, 176, 32, 0.08);
+}
+
+.notice.warn .notice-icon { color: var(--p2); }
+
+.notice.warn #notice-action {
+  background: transparent;
+  border-color: rgba(255, 176, 32, 0.5);
+  color: var(--p2);
+}
+
+.notice.warn #notice-action:hover { background: rgba(255, 176, 32, 0.12); }
+
+.sync-status.warn {
+  color: var(--p2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sync-status.warn::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--p2);
+}
+
+.notice .icon-warn,
+.notice.warn .icon-info { display: none; }
+.notice.warn .icon-warn { display: block; }
