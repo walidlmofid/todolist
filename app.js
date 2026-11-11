@@ -7,9 +7,23 @@ const GROUP_DRAG = "application/x-todo-group";
 
 // Bump when the saved data changes shape. A device running an older version
 // of the app refuses to sync newer data instead of damaging it.
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 
 const PRIORITIES = ["No priority", "Low", "Medium", "High"];
+
+// How a group orders its tasks.
+const SORTS = {
+  manual: "My order",
+  newest: "Newest first",
+  oldest: "Oldest first",
+  "priority-high": "High priority first",
+  "priority-low": "Low priority first",
+};
+
+const ARCHIVE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+// Archived tasks stay in the task list, marked with archivedAt.
+const isActive = t => !t.archivedAt;
 
 // ---------- State ----------
 
@@ -19,7 +33,7 @@ let editCount = 0;
 
 function freshState() {
   return {
-    groups: [{ id: DEFAULT_GROUP_ID, name: "Ungrouped", createdAt: EPOCH, pos: 0, priority: 0 }],
+    groups: [{ id: DEFAULT_GROUP_ID, name: "Ungrouped", createdAt: EPOCH, pos: 0, priority: 0, sort: "manual" }],
     tasks: [],
   };
 }
@@ -42,6 +56,7 @@ function upgrade(data) {
     g.createdAt = g.createdAt || (g.id === DEFAULT_GROUP_ID ? EPOCH : new Date(i + 1).toISOString());
     if (typeof g.pos !== "number") g.pos = Date.parse(g.createdAt);
     g.priority = g.priority || 0;
+    g.sort = g.sort || "manual";
     delete g.updatedAt;
   });
   data.tasks.forEach((t, i) => {
@@ -134,8 +149,54 @@ function setPriority(item, priority) {
   commit();
 }
 
+function setSort(group, sort) {
+  group.sort = sort;
+  commit();
+}
+
+function groupNameOf(id) {
+  return (state.groups.find(g => g.id === id) || { name: "Ungrouped" }).name;
+}
+
+// Remembers the group's name, so the archive still shows it if the group is renamed or deleted later.
+function archive(task, at) {
+  task.archivedAt = at;
+  task.archivedGroup = groupNameOf(task.groupId);
+}
+
+function archiveDone() {
+  state.tasks.filter(t => isActive(t) && t.doneAt).forEach(t => archive(t, now()));
+  commit();
+}
+
+// Done tasks are archived 24 hours after they were checked. The archive time
+// is that moment, so every device archives a task with the same time.
+function autoArchive() {
+  if (syncing) return;
+  const due = state.tasks.filter(t => isActive(t) && t.doneAt && Date.now() - Date.parse(t.doneAt) >= ARCHIVE_AFTER_MS);
+  if (!due.length) return;
+  due.forEach(t => archive(t, new Date(Date.parse(t.doneAt) + ARCHIVE_AFTER_MS).toISOString()));
+  commit();
+}
+
+// A restored task goes back to its group as not done (otherwise it would be archived again right away).
+function restoreTask(id) {
+  const task = state.tasks.find(t => t.id === id);
+  delete task.archivedAt;
+  delete task.archivedGroup;
+  task.doneAt = null;
+  if (!state.groups.some(g => g.id === task.groupId)) task.groupId = DEFAULT_GROUP_ID;
+  commit();
+}
+
+function deleteArchived(id) {
+  const task = state.tasks.find(t => t.id === id);
+  if (!confirm(`Delete "${task.text}" for good? This can't be undone.`)) return;
+  deleteTask(id);
+}
+
 function addGroup(name) {
-  const group = { id: uid(), name, createdAt: now(), pos: nextPos(state.groups), priority: 0 };
+  const group = { id: uid(), name, createdAt: now(), pos: nextPos(state.groups), priority: 0, sort: "manual" };
   state.groups.push(group);
   commit();
   return group;
@@ -239,6 +300,11 @@ const KINDS = {
         describe: (before, after) => `Set group "${after.name}" to ${priorityName(after.priority)}`,
         show: g => priorityName(g.priority),
       },
+      {
+        fields: ["sort"],
+        describe: (before, after) => `Sorted group "${after.name}": ${SORTS[after.sort] || after.sort}`,
+        show: g => `sorted "${SORTS[g.sort] || g.sort}"`,
+      },
     ],
   },
   tasks: {
@@ -260,10 +326,16 @@ const KINDS = {
         minor: (a, b) => a.groupId === b.groupId,
       },
       {
-        fields: ["doneAt"],
-        key: t => !!t.doneAt,
-        describe: (before, after) => `${after.doneAt ? "Checked" : "Unchecked"} "${after.text}"`,
-        show: t => (t.doneAt ? "checked" : "not checked"),
+        // Checked and archived are one part, so e.g. "unchecked here" vs
+        // "archived there" is asked about instead of mixed together.
+        fields: ["doneAt", "archivedAt", "archivedGroup"],
+        key: t => [!!t.doneAt, !!t.archivedAt],
+        describe: (before, after) => {
+          if (after.archivedAt && !before.archivedAt) return `Archived "${after.text}"`;
+          if (!after.archivedAt && before.archivedAt) return `Restored "${after.text}" from the archive`;
+          return `${after.doneAt ? "Checked" : "Unchecked"} "${after.text}"`;
+        },
+        show: t => (t.archivedAt ? "archived" : t.doneAt ? "checked" : "not checked"),
       },
       {
         fields: ["priority"],
@@ -587,17 +659,48 @@ function render() {
 
   groupsEl.replaceChildren(...state.groups.map(renderGroup));
   renderStats();
+  renderToolbar();
   renderSync();
+  if (archiveDialog.open) renderArchive();
 }
 
+// Tasks, Completed and Groups count what's on the board; Done Today also counts archived tasks.
 function renderStats() {
   const today = new Date().toDateString();
-  const done = state.tasks.filter(t => t.doneAt);
-  document.getElementById("stat-total").textContent = state.tasks.length;
-  document.getElementById("stat-done").textContent = done.length;
+  const active = state.tasks.filter(isActive);
+  document.getElementById("stat-total").textContent = active.length;
+  document.getElementById("stat-done").textContent = active.filter(t => t.doneAt).length;
   document.getElementById("stat-today").textContent =
-    done.filter(t => new Date(t.doneAt).toDateString() === today).length;
+    state.tasks.filter(t => t.doneAt && new Date(t.doneAt).toDateString() === today).length;
   document.getElementById("stat-groups").textContent = state.groups.length;
+}
+
+function renderToolbar() {
+  const doneCount = state.tasks.filter(t => isActive(t) && t.doneAt).length;
+  const archivedCount = state.tasks.length - state.tasks.filter(isActive).length;
+  const archiveBtn = document.getElementById("archive-done-btn");
+  archiveBtn.disabled = !doneCount;
+  archiveBtn.textContent = doneCount ? `Archive done (${doneCount})` : "Archive done";
+  document.getElementById("archive-count").textContent = archivedCount;
+}
+
+function sortTasks(tasks, sort) {
+  const created = (a, b) => a.createdAt.localeCompare(b.createdAt);
+  const compare = {
+    newest: (a, b) => created(b, a),
+    oldest: created,
+    // Same priority keeps your own order.
+    "priority-high": (a, b) => b.priority - a.priority || a.pos - b.pos,
+    "priority-low": (a, b) => a.priority - b.priority || a.pos - b.pos,
+  }[sort];
+  return compare ? [...tasks].sort(compare) : tasks;
+}
+
+function sortSelect(group) {
+  const select = el("select", { className: "sort-select" + (group.sort === "manual" ? "" : " active"), title: "Sort tasks" },
+    Object.entries(SORTS).map(([value, label]) => el("option", { value, textContent: label, selected: value === group.sort })));
+  select.addEventListener("change", () => setSort(group, select.value));
+  return select;
 }
 
 function renderSync() {
@@ -625,7 +728,8 @@ function renderSync() {
 }
 
 function renderGroup(group, index) {
-  const tasks = state.tasks.filter(t => t.groupId === group.id);
+  const sorted = group.sort !== "manual";
+  const tasks = sortTasks(state.tasks.filter(t => isActive(t) && t.groupId === group.id), group.sort);
   const doneCount = tasks.filter(t => t.doneAt).length;
 
   const first = index === 0;
@@ -647,12 +751,13 @@ function renderGroup(group, index) {
 
   const header = el("div", { className: "group-header", draggable: true, title: "Drag to reorder groups" }, [
     el("span", { className: "group-name", textContent: group.name }),
+    sortSelect(group),
     el("span", { className: "group-count", textContent: `${doneCount}/${tasks.length}` }),
     tools,
   ]);
 
   const list = el("ul", { className: "tasks" },
-    tasks.length ? tasks.map(renderTask) : [el("li", { className: "empty", textContent: "No tasks — drag one here" })]
+    tasks.length ? tasks.map(t => renderTask(t, sorted)) : [el("li", { className: "empty", textContent: "No tasks — drag one here" })]
   );
 
   const section = el("section", { className: `group gp${group.priority}` }, [header, list]);
@@ -691,13 +796,16 @@ function renderGroup(group, index) {
       return;
     }
     const id = e.dataTransfer.getData("text/plain");
-    if (id) moveTask(id, group.id);
+    const task = state.tasks.find(t => t.id === id);
+    // In a sorted group the order is automatic, so only moving in from another group does anything.
+    if (task && (task.groupId !== group.id || !sorted)) moveTask(id, group.id);
   });
 
   return section;
 }
 
-function renderTask(task) {
+// In a sorted group, dropping a task on another task just moves it into the group.
+function renderTask(task, sorted) {
   const dates = [`Created ${formatDate(task.createdAt)}`];
   if (task.doneAt) dates.push(`Done ${formatDate(task.doneAt)}`);
 
@@ -726,14 +834,14 @@ function renderTask(task) {
 
   // Dropping a task on a task puts it right before it. Group drags are left to the group.
   li.addEventListener("dragover", e => {
-    if (isGroupDrag(e)) return;
+    if (isGroupDrag(e) || sorted) return;
     e.preventDefault();
     e.stopPropagation();
     li.classList.add("drop-before");
   });
   li.addEventListener("dragleave", () => li.classList.remove("drop-before"));
   li.addEventListener("drop", e => {
-    if (isGroupDrag(e)) return;
+    if (isGroupDrag(e) || sorted) return;
     e.preventDefault();
     e.stopPropagation();
     const id = e.dataTransfer.getData("text/plain");
@@ -743,6 +851,61 @@ function renderTask(task) {
 
   return li;
 }
+
+// ---------- Archive ----------
+
+const archiveDialog = document.getElementById("archive");
+const archiveSearch = document.getElementById("archive-search");
+
+function renderArchive() {
+  const query = archiveSearch.value.trim().toLowerCase();
+  const archived = state.tasks
+    .filter(t => !isActive(t))
+    .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt));
+  const shown = archived.filter(t =>
+    !query || t.text.toLowerCase().includes(query) || (t.archivedGroup || "").toLowerCase().includes(query));
+
+  document.getElementById("archive-summary").textContent = query
+    ? `${shown.length} of ${archived.length} archived tasks`
+    : `${archived.length} archived task${archived.length === 1 ? "" : "s"}`;
+
+  const emptyText = query
+    ? "No archived tasks match."
+    : "Nothing archived yet. Done tasks are archived automatically 24 hours after you check them.";
+
+  document.getElementById("archive-list").replaceChildren(...(shown.length ? shown.map(renderArchived) : [
+    el("li", { className: "empty", textContent: emptyText }),
+  ]));
+}
+
+function renderArchived(task) {
+  const tags = [el("span", { className: "tag", textContent: task.archivedGroup || groupNameOf(task.groupId) })];
+  if (task.priority) tags.push(el("span", { className: `tag priority p${task.priority}`, textContent: PRIORITIES[task.priority] }));
+  const dates = [`Created ${formatDate(task.createdAt)}`];
+  if (task.doneAt) dates.push(`Done ${formatDate(task.doneAt)}`);
+  dates.push(`Archived ${formatDate(task.archivedAt)}`);
+
+  return el("li", { className: "archived-task" }, [
+    el("div", { className: "archived-main" }, [
+      el("div", { className: "task-text", textContent: task.text }),
+      el("div", { className: "archived-tags" }, tags),
+      el("div", { className: "task-dates", textContent: dates.join("  ·  ") }),
+    ]),
+    el("div", { className: "archived-actions" }, [
+      el("button", { className: "secondary small", type: "button", textContent: "Restore", title: "Put it back in its group, not done", onclick: () => restoreTask(task.id) }),
+      el("button", { className: "icon-btn danger", type: "button", textContent: "✕", title: "Delete for good", onclick: () => deleteArchived(task.id) }),
+    ]),
+  ]);
+}
+
+document.getElementById("archive-done-btn").addEventListener("click", archiveDone);
+document.getElementById("archive-open-btn").addEventListener("click", () => {
+  archiveSearch.value = "";
+  renderArchive();
+  archiveDialog.showModal();
+});
+document.getElementById("archive-close").addEventListener("click", () => archiveDialog.close());
+archiveSearch.addEventListener("input", renderArchive);
 
 // ---------- Settings ----------
 
@@ -828,3 +991,7 @@ if ("serviceWorker" in navigator && window.isSecureContext && /^https?:$/.test(l
 }
 
 render();
+autoArchive();
+// Keep archiving while the app stays open, and when it comes back to the screen.
+setInterval(autoArchive, 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) autoArchive(); });

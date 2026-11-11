@@ -60,8 +60,26 @@
       <div class="stat"><span id="stat-groups" class="stat-value">0</span><span class="stat-label">Groups</span></div>
     </section>
 
+    <section class="toolbar">
+      <span class="toolbar-hint">Done tasks are archived automatically after 24 hours.</span>
+      <button id="archive-done-btn" type="button" class="secondary" title="Archive all checked tasks now">Archive done</button>
+      <button id="archive-open-btn" type="button" class="secondary">Archive <span id="archive-count" class="count-badge">0</span></button>
+    </section>
+
     <div id="groups"></div>
   </main>
+
+  <dialog id="archive">
+    <div class="archive-head">
+      <div>
+        <h2>Archive</h2>
+        <p id="archive-summary" class="hint"></p>
+      </div>
+      <button id="archive-close" type="button" class="icon-btn" title="Close" aria-label="Close">✕</button>
+    </div>
+    <input id="archive-search" type="search" placeholder="Search by task or group…" autocomplete="off">
+    <ul id="archive-list" class="archive-list"></ul>
+  </dialog>
 
   <dialog id="settings">
     <form id="settings-form">
