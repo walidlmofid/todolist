@@ -736,6 +736,40 @@ const ARROWS = {
   bottom: "M6 20h12M12 4v11M7 11l5 5 5-5",
 };
 
+const COPY_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+const COPIED_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+
+function copyButton(text) {
+  const button = el("button", { className: "icon-btn copy-btn", type: "button", title: "Copy text" });
+  button.setAttribute("aria-label", "Copy text");
+  button.innerHTML = COPY_ICON;
+  button.addEventListener("click", async () => {
+    await copyText(text);
+    button.innerHTML = COPIED_ICON;
+    button.classList.add("copied");
+    button.title = "Copied!";
+    setTimeout(() => {
+      button.innerHTML = COPY_ICON;
+      button.classList.remove("copied");
+      button.title = "Copy text";
+    }, 1500);
+  });
+  return button;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    // Older way, for when the clipboard API isn't allowed (e.g. the local file).
+    const area = el("textarea", { value: text });
+    document.body.append(area);
+    area.select();
+    document.execCommand("copy");
+    area.remove();
+  }
+}
+
 function arrowButton(name, title, disabled, onclick) {
   const button = el("button", { className: "icon-btn arrow-btn", title, disabled, onclick });
   button.setAttribute("aria-label", title);
@@ -915,18 +949,28 @@ function renderTask(task, sorted) {
   const groupSelect = el("select", { title: "Move to group" }, groupOptions(task.groupId));
   groupSelect.addEventListener("change", () => moveTask(task.id, groupSelect.value));
 
+  const textEl = el("div", { className: "task-text", textContent: task.text });
+
   const li = el("li", { className: "task" + (task.doneAt ? " done" : ""), draggable: true }, [
     el("input", { type: "checkbox", checked: !!task.doneAt, onchange: () => toggleTask(task.id) }),
     el("div", { className: "task-body" }, [
-      el("div", { className: "task-text", textContent: task.text }),
+      textEl,
       el("div", { className: "task-dates", textContent: dates.join("  ·  ") }),
     ]),
     el("div", { className: "task-controls" }, [
       prioritySelect(task),
       groupSelect,
+      copyButton(task.text),
       el("button", { className: "icon-btn danger", title: "Delete task", textContent: "✕", onclick: () => deleteTask(task.id) }),
     ]),
   ]);
+
+  // Text inside a draggable row can't be selected, so pressing on the text
+  // selects it instead of dragging. The rest of the row still drags.
+  textEl.addEventListener("pointerdown", () => {
+    li.draggable = false;
+    document.addEventListener("pointerup", () => { li.draggable = true; }, { once: true });
+  });
 
   li.addEventListener("dragstart", e => {
     e.stopPropagation();

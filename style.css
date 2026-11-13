@@ -430,7 +430,7 @@ button.secondary:hover { border-color: #3d3d3d; background: #141414; }
 @media (max-width: 560px) {
   .task { flex-wrap: wrap; row-gap: 10px; }
   .task-controls { flex-basis: 100%; padding-left: 34px; }
-  .task-controls .icon-btn { margin-left: auto; }
+  .task-controls .copy-btn { margin-left: auto; }
   .group-header { flex-wrap: wrap; row-gap: 10px; }
   .group-tools { flex-basis: 100%; }
   .group-tools .priority { margin-right: auto; }
@@ -773,3 +773,16 @@ button.small {
 .notice .icon-warn,
 .notice.warn .icon-info { display: none; }
 .notice.warn .icon-warn { display: block; }
+
+/* Task text can be selected and copied */
+.task-text { cursor: text; user-select: text; }
+
+.copy-btn {
+  display: grid;
+  place-items: center;
+  padding: 5px 6px;
+}
+
+.copy-btn.copied { color: var(--accent); }
+.task-controls, .task-dates { user-select: none; }
+button { -webkit-tap-highlight-color: transparent; }
